@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GuardTrack Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: #f4f6f9; color: #1a1a2e; }
+.topbar { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+.logo { font-size: 20px; font-weight: 600; color: #1a1a2e; }
+.logo span { color: #1D9E75; }
+.pill { padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 500; }
+.pill-locked { background: #E1F5EE; color: #0F6E56; }
+.pill-killed { background: #FCEBEB; color: #A32D2D; }
+.pill-unlocked { background: #FAEEDA; color: #854F0B; }
+.main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+.grid4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 1rem; margin-bottom: 1.5rem; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+.card { background: #fff; border-radius: 12px; padding: 1.25rem; border: 1px solid #e8e8e8; }
+.metric-label { font-size: 12px; color: #888; margin-bottom: 6px; }
+.metric-value { font-size: 26px; font-weight: 600; }
+.metric-sub { font-size: 11px; color: #aaa; margin-top: 3px; }
+.ok { color: #1D9E75; } .warn { color: #BA7517; } .bad { color: #E24B4A; }
+.card-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: #888; margin-bottom: 1rem; }
+.btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid #ddd; background: #fff; color: #333; }
+.btn:hover { background: #f5f5f5; }
+.btn-primary { background: #1D9E75; color: white; border-color: #1D9E75; }
+.btn-danger { background: #FCEBEB; color: #A32D2D; border-color: #F09595; }
+.btn-kill { background: #A32D2D; color: white; border-color: #A32D2D; }
+input[type=text], input[type=tel] { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; margin-bottom: 8px; }
+.arow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: #f9f9f9; margin-bottom: 6px; }
+.aicon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.ir { background: #E6F1FB; color: #185FA5; }
+.if { background: #E1F5EE; color: #0F6E56; }
+.id { background: #FCEBEB; color: #A32D2D; }
+.badge { font-size: 11px; padding: 2px 9px; border-radius: 10px; font-weight: 500; }
+.bg { background: #E1F5EE; color: #0F6E56; }
+.bd { background: #FCEBEB; color: #A32D2D; }
+.kill-card { background: #fff; border: 1px solid #F09595; border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; }
+.phone-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: #f9f9f9; border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
+.map-placeholder { background: #eef2f7; border-radius: 8px; height: 200px; display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; margin-bottom: 1rem; position: relative; }
+.coord-badge { position: absolute; bottom: 8px; left: 8px; background: white; padding: 3px 10px; border-radius: 6px; font-size: 11px; color: #555; border: 1px solid #ddd; }
+@media(max-width:768px){ .grid4{grid-template-columns:1fr 1fr} .grid2{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">Guard<span>Track</span></div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="pill pill-locked" id="statusPill">Immobilized</span>
+    <span id="clock" style="font-size:13px;color:#888"></span>
+    <button class="btn btn-primary" id="lockBtn" onclick="toggleLock()">Unlock vehicle</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="grid4">
+    <div class="card"><div class="metric-label">Battery voltage</div><div class="metric-value ok" id="voltVal">--</div><div class="metric-sub" id="voltSub">Waiting...</div></div>
+    <div class="card"><div class="metric-label">Failed attempts</div><div class="metric-value bad" id="failCount">0</div><div class="metric-sub">Total today</div></div>
+    <div class="card"><div class="metric-label">GPS status</div><div class="metric-value ok" id="gpsVal">--</div><div class="metric-sub" id="gpsSub">Waiting...</div></div>
+    <div class="card"><div class="metric-label">Last update</div><div class="metric-value" style="font-size:16px" id="lastUpdate">--</div><div class="metric-sub">From ESP32</div></div>
+  </div>
+
+  <div class="kill-card">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem">
+      <div>
+        <div style="font-size:14px;font-weight:600;color:#A32D2D;margin-bottom:4px">Remote ignition kill</div>
+        <div style="font-size:12px;color:#888">Cuts the ignition relay immediately. Vehicle cannot restart until re-enabled.</div>
+      </div>
+      <button class="btn btn-danger" id="killBtn" onclick="showKillConfirm()">Kill ignition</button>
+    </div>
+    <div id="confirmBox" style="display:none;margin-top:1rem;padding:1rem;background:#FCEBEB;border-radius:8px;border:1px solid #F09595">
+      <div style="font-size:13px;font-weight:500;color:#A32D2D;margin-bottom:.75rem">Are you sure? This will immediately stop the vehicle.</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-kill" onclick="executeKill()">Confirm kill</button>
+        <button class="btn" onclick="cancelKill()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title">Live location</div>
+      <div class="map-placeholder">
+        <span id="mapMsg">Waiting for GPS data...</span>
+        <div class="coord-badge" id="coordBadge">--</div>
+      </div>
+      <a id="mapsLink" href="#" target="_blank" style="font-size:13px;color:#1D9E75">Open in Google Maps</a>
+    </div>
+    <div class="card">
+      <div class="card-title">Access log</div>
+      <div id="attemptList" style="max-height:260px;overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title">Register RFID card</div>
+      <input type="text" id="rfidLabel" placeholder="Label (e.g. Owner card)" />
+      <input type="text" id="rfidUID" placeholder="UID (e.g. 9B:27:2C:1F)" />
+      <button class="btn btn-primary" onclick="registerRFID()">Register card</button>
+      <div id="rfidStatus" style="font-size:12px;margin-top:8px;color:#888"></div>
+      <div style="margin-top:1rem" id="rfidList"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Register fingerprint</div>
+      <input type="text" id="fpLabel" placeholder="Name (e.g. Owner)" />
+      <input type="text" id="fpId" placeholder="Sensor ID (1-127)" value="1" />
+      <button class="btn btn-primary" onclick="startEnrollment()">Start enrollment</button>
+      <div id="fpStatus" style="font-size:12px;margin-top:8px;color:#888"></div>
+      <div style="margin-top:1rem" id="fpList"></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title">Registered phones (max 3)</div>
+      <input type="text" id="phoneLabel" placeholder="Label (e.g. Owner)" />
+      <input type="tel" id="phoneNumber" placeholder="Number (e.g. +15921234567)" />
+      <button class="btn btn-primary" onclick="registerPhone()">Add phone</button>
+      <div id="phoneStatus" style="font-size:12px;margin-top:8px;color:#888"></div>
+      <div style="margin-top:1rem" id="phoneList"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Battery voltage trend</div>
+      <div style="position:relative;height:200px">
+        <canvas id="vChart" role="img" aria-label="Battery voltage trend chart">Battery voltage over time.</canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const socket = io();
+let locked = true, killed = false, failCount = 0;
+let vChart, vData = [], vLabels = [];
+
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+setInterval(updateClock, 1000); updateClock();
+
+socket.on('update', d => {
+  document.getElementById('voltVal').textContent = parseFloat(d.voltage).toFixed(1) + 'V';
+  document.getElementById('voltSub').textContent = d.voltage < 11.5 ? 'Critical' : d.voltage < 12 ? 'Low' : 'Normal';
+  document.getElementById('voltVal').className = 'metric-value ' + (d.voltage < 11.5 ? 'bad' : d.voltage < 12 ? 'warn' : 'ok');
+  document.getElementById('gpsVal').textContent = d.gps_valid ? 'Active' : 'No signal';
+  document.getElementById('gpsSub').textContent = d.gps_valid ? `${parseFloat(d.lat).toFixed(4)}, ${parseFloat(d.lng).toFixed(4)}` : 'Last known shown';
+  document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  document.getElementById('coordBadge').textContent = `${parseFloat(d.lat).toFixed(5)}° N, ${Math.abs(parseFloat(d.lng)).toFixed(5)}° W`;
+  document.getElementById('mapMsg').textContent = d.gps_valid ? 'GPS Active' : 'Last known location';
+  document.getElementById('mapsLink').href = `https://maps.google.com/?q=${d.lat},${d.lng}`;
+  if (d.attempt) {
+    if (d.attempt === 'denied') failCount++;
+    document.getElementById('failCount').textContent = failCount;
+    addAttemptRow(d.method, d.attempt, d.timestamp);
+  }
+  vData.push(parseFloat(d.voltage).toFixed(2));
+  vLabels.push(new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));
+  if (vData.length > 20) { vData.shift(); vLabels.shift(); }
+  if (vChart) { vChart.data.datasets[0].data = vData; vChart.data.labels = vLabels; vChart.update('none'); }
+});
+
+socket.on('kill_update', d => {
+  killed = d.kill;
+  updateKillUI();
+});
+
+function addAttemptRow(method, result, timestamp) {
+  const list = document.getElementById('attemptList');
+  const iconClass = result === 'granted' ? (method === 'rfid' ? 'ir' : 'if') : 'id';
+  const iconText = method === 'rfid' ? 'R' : method === 'fingerprint' ? 'F' : '!';
+  const row = document.createElement('div');
+  row.className = 'arow';
+  row.innerHTML = `<div class="aicon ${iconClass}">${iconText}</div><div style="flex:1"><div style="font-size:12px;font-weight:500">${method} scan</div><div style="font-size:10px;color:#aaa">${timestamp}</div></div><span class="badge ${result==='granted'?'bg':'bd'}">${result}</span>`;
+  list.insertBefore(row, list.firstChild);
+}
+
+function toggleLock() {
+  if (killed) return;
+  locked = !locked;
+  document.getElementById('statusPill').className = 'pill ' + (locked ? 'pill-locked' : 'pill-unlocked');
+  document.getElementById('statusPill').textContent = locked ? 'Immobilized' : 'Unlocked';
+  document.getElementById('lockBtn').textContent = locked ? 'Unlock vehicle' : 'Lock vehicle';
+}
+
+function showKillConfirm() { document.getElementById('confirmBox').style.display='block'; }
+function cancelKill() { document.getElementById('confirmBox').style.display='none'; }
+
+function executeKill() {
+  fetch('/api/killswitch', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:true})})
+    .then(() => { killed=true; updateKillUI(); document.getElementById('confirmBox').style.display='none'; });
+}
+
+function reEnableIgnition() {
+  fetch('/api/killswitch', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:false})})
+    .then(() => { killed=false; updateKillUI(); });
+}
+
+function updateKillUI() {
+  const pill = document.getElementById('statusPill');
+  const killBtn = document.getElementById('killBtn');
+  const lockBtn = document.getElementById('lockBtn');
+  if (killed) {
+    pill.className='pill pill-killed'; pill.textContent='Ignition killed';
+    killBtn.textContent='Re-enable ignition'; killBtn.className='btn btn-primary'; killBtn.onclick=reEnableIgnition;
+    lockBtn.disabled=true;
+  } else {
+    pill.className='pill pill-locked'; pill.textContent='Immobilized';
+    killBtn.textContent='Kill ignition'; killBtn.className='btn btn-danger'; killBtn.onclick=showKillConfirm;
+    lockBtn.disabled=false;
+  }
+}
+
+function registerRFID() {
+  const label = document.getElementById('rfidLabel').value.trim();
+  const uid = document.getElementById('rfidUID').value.trim();
+  if (!label || !uid) { document.getElementById('rfidStatus').textContent='Fill in both fields.'; return; }
+  fetch('/api/rfid', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label,uid})})
+    .then(r=>r.json()).then(d => {
+      document.getElementById('rfidStatus').textContent = d.ok ? 'Card registered!' : d.error;
+      if (d.ok) { document.getElementById('rfidLabel').value=''; document.getElementById('rfidUID').value=''; loadRFIDCards(); }
+    });
+}
+
+function loadRFIDCards() {
+  fetch('/api/rfid').then(r=>r.json()).then(cards => {
+    document.getElementById('rfidList').innerHTML = cards.map(c =>
+      `<div class="phone-row"><span>${c.label} — <code>${c.uid}</code></span><button class="btn" style="font-size:11px;padding:3px 10px" onclick="deleteCard(${c.id})">Remove</button></div>`
+    ).join('');
+  });
+}
+
+function deleteCard(id) {
+  fetch('/api/rfid/'+id, {method:'DELETE'}).then(()=>loadRFIDCards());
+}
+
+function startEnrollment() {
+  const label = document.getElementById('fpLabel').value.trim();
+  const fp_id = parseInt(document.getElementById('fpId').value) || 1;
+  if (!label) { document.getElementById('fpStatus').textContent='Enter a name.'; return; }
+  fetch('/api/fingerprint/enroll', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label,fp_id})})
+    .then(r=>r.json()).then(d => {
+      document.getElementById('fpStatus').textContent = d.ok ? `Place finger on sensor for ${label}...` : d.error;
+      if (d.ok) { document.getElementById('fpLabel').value=''; loadFingerprints(); }
+    });
+}
+
+function loadFingerprints() {
+  fetch('/api/fingerprint').then(r=>r.json()).then(fps => {
+    document.getElementById('fpList').innerHTML = fps.map(f =>
+      `<div class="phone-row"><span>${f.label} — ID #${f.fp_id}</span><button class="btn" style="font-size:11px;padding:3px 10px" onclick="deleteFP(${f.id})">Remove</button></div>`
+    ).join('');
+  });
+}
+
+function deleteFP(id) {
+  fetch('/api/fingerprint/'+id, {method:'DELETE'}).then(()=>loadFingerprints());
+}
+
+function registerPhone() {
+  const label = document.getElementById('phoneLabel').value.trim();
+  const number = document.getElementById('phoneNumber').value.trim();
+  if (!label || !number) { document.getElementById('phoneStatus').textContent='Fill in both fields.'; return; }
+  fetch('/api/phones', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label,number})})
+    .then(r=>r.json()).then(d => {
+      document.getElementById('phoneStatus').textContent = d.ok ? 'Phone added!' : d.error;
+      if (d.ok) { document.getElementById('phoneLabel').value=''; document.getElementById('phoneNumber').value=''; loadPhones(); }
+    });
+}
+
+function loadPhones() {
+  fetch('/api/phones').then(r=>r.json()).then(phones => {
+    document.getElementById('phoneList').innerHTML = phones.map(p =>
+      `<div class="phone-row"><span>${p.label} — ${p.number}</span><button class="btn" style="font-size:11px;padding:3px 10px" onclick="deletePhone(${p.id})">Remove</button></div>`
+    ).join('');
+  });
+}
+
+function deletePhone(id) {
+  fetch('/api/phones/'+id, {method:'DELETE'}).then(()=>loadPhones());
+}
+
+window.onload = () => {
+  loadRFIDCards(); loadFingerprints(); loadPhones();
+  vChart = new Chart(document.getElementById('vChart'), {
+    type: 'line',
+    data: { labels: vLabels, datasets: [{ label:'Voltage', data: vData, borderColor:'#1D9E75', backgroundColor:'rgba(29,158,117,.1)', borderWidth:2, pointRadius:3, fill:true, tension:.4 }] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{min:11,max:15,ticks:{callback:v=>v+'V'}}, x:{ticks:{maxTicksLimit:6}} } }
+  });
+};
+</script>
+</body>
+</html>
