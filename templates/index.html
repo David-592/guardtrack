@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GuardTrack — Vehicle Immobilizer</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d0d14;color:#c8c8d8;min-height:100vh}
@@ -41,22 +43,15 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .mc-val.ok{color:#a78bfa}.mc-val.warn{color:#fbbf24}.mc-val.bad{color:#f87171}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1.25rem}
 .card{background:#13131f;border:1px solid #2a2a3d;border-radius:12px;padding:1.125rem}
-.card-title{font-size:10px;font-weight:600;color:#4a4a6a;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.875rem;display:flex;align-items:center;gap:6px}
-.card-title::before{content:'';width:3px;height:12px;background:#7c3aed;border-radius:2px}
-.map-outer{border-radius:8px;overflow:hidden;height:210px;border:1px solid #2a2a3d;margin-bottom:.75rem;background:#0a0a12;position:relative}
-.map-fallback{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#0a0a12;position:relative}
-.map-grid{position:absolute;inset:0;opacity:.08}
-.mg-h{position:absolute;left:0;right:0;height:1px;background:#7c3aed}
-.mg-v{position:absolute;top:0;bottom:0;width:1px;background:#7c3aed}
-.map-pin{position:absolute;top:44%;left:50%;transform:translate(-50%,-50%)}
-.pin-pulse{width:44px;height:44px;border-radius:50%;background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.3);display:flex;align-items:center;justify-content:center;animation:ping 2s infinite}
-@keyframes ping{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:1}50%{transform:translate(-50%,-50%) scale(1.2);opacity:.7}}
-.pin-core{width:12px;height:12px;border-radius:50%;background:#7c3aed;border:2px solid #fff}
-.map-coord{position:absolute;bottom:8px;left:8px;font-size:10px;color:#4a4a6a;background:rgba(13,13,20,.9);padding:3px 8px;border-radius:4px;border:1px solid #2a2a3d;font-family:monospace}
-.map-lost{position:absolute;top:8px;right:8px;font-size:10px;background:rgba(245,158,11,.15);color:#fbbf24;padding:3px 8px;border-radius:4px;border:1px solid rgba(245,158,11,.3)}
+.card-title{font-size:10px;font-weight:600;color:#4a4a6a;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.875rem;display:flex;align-items:center;gap:6px;justify-content:space-between}
+.card-title .lbl{display:flex;align-items:center;gap:6px}
+.card-title .lbl::before{content:'';width:3px;height:12px;background:#7c3aed;border-radius:2px}
+.card-title .stat{font-weight:500;color:#7c7c95;text-transform:none;letter-spacing:0}
+#leafletMap{width:100%;height:260px;border-radius:8px;border:1px solid #2a2a3d;margin-bottom:.75rem;background:#0a0a12}
+.leaflet-container{background:#0a0a12}
 .gps-row{display:flex;align-items:center;gap:6px;font-size:11px;color:#4a4a6a;margin-bottom:.625rem}
 .map-btns{display:flex;gap:6px}
-.alist{display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto}
+.alist{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto}
 .arow{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;background:#0d0d14;border:1px solid #1e1e2e}
 .aicon{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0}
 .ir{background:rgba(124,58,237,.15);color:#a78bfa}
@@ -73,8 +68,6 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .kill-icon{width:40px;height:40px;border-radius:50%;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px}
 .kill-title{font-size:13px;font-weight:600;color:#f87171;margin-bottom:3px}
 .kill-sub{font-size:11px;color:#4a4a6a}
-.confirm-box{margin-top:.875rem;padding:.875rem;background:rgba(239,68,68,.08);border-radius:8px;border:1px solid rgba(239,68,68,.25);display:none}
-.confirm-text{font-size:11px;color:#f87171;margin-bottom:.75rem;font-weight:500}
 .alerts-card{margin-bottom:1.25rem}
 .nlist{display:flex;flex-direction:column;gap:7px;max-height:240px;overflow-y:auto}
 .nrow{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;border:1px solid #1e1e2e;background:#0d0d14}
@@ -85,14 +78,13 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .sec-title::after{content:'';flex:1;height:1px;background:#1e1e2e}
 .fp-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:.875rem}
 .fp-slot{padding:8px 4px;border-radius:8px;border:1px solid #2a2a3d;background:#0d0d14;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:all .15s;min-height:52px}
-.fp-slot:hover{border-color:rgba(124,58,237,.4);background:rgba(124,58,237,.05)}
 .fp-slot.filled{border-color:rgba(124,58,237,.5);background:rgba(124,58,237,.1);cursor:pointer}
 .fp-num{font-size:9px;color:#3a3a5a;margin-bottom:3px;font-family:monospace}
-.fp-name{font-size:9px;color:#4a4a6a;text-align:center;line-height:1.2;padding:0 4px;word-break:break-word}
+.fp-name{font-size:9px;color:#4a4a6a;text-align:center;line-height:1.2;padding:0 4px}
 .fp-slot.filled .fp-name{color:#a78bfa}
 .fp-icon{font-size:14px;margin-bottom:3px;opacity:.4}
 .fp-slot.filled .fp-icon{opacity:1}
-input[type=text],input[type=tel],select{width:100%;font-size:11px;padding:7px 10px;border-radius:8px;border:1px solid #2a2a3d;background:#0d0d14;color:#c8c8d8;margin-bottom:7px;outline:none;transition:border .15s}
+input[type=text],input[type=tel],select{width:100%;font-size:11px;padding:7px 10px;border-radius:8px;border:1px solid #2a2a3d;background:#0d0d14;color:#c8c8d8;margin-bottom:7px;outline:none}
 input:focus,select:focus{border-color:rgba(124,58,237,.5)}
 select option{background:#13131f;color:#c8c8d8}
 .phone-row{display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:8px;background:#0d0d14;border:1px solid #1e1e2e;margin-bottom:6px}
@@ -102,17 +94,29 @@ select option{background:#13131f;color:#c8c8d8}
 .status-item{display:flex;align-items:center;gap:4px}
 .status-sep{color:#1e1e2e}
 ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:#0d0d14}::-webkit-scrollbar-thumb{background:#2a2a3d;border-radius:2px}
-/* ---- live/offline visuals ---- */
 .offline-banner{display:none;padding:8px 14px;background:rgba(239,68,68,.1);border-bottom:1px solid rgba(239,68,68,.25);color:#f87171;font-size:11px;text-align:center}
 body.is-offline .offline-banner{display:block}
-body.is-offline .live-only{opacity:.4;pointer-events:none;filter:grayscale(.5)}
+body.is-offline .live-only{opacity:.5;pointer-events:none;filter:grayscale(.4)}
 body.is-offline .live-only button{cursor:not-allowed}
 .empty-hint{font-size:11px;color:#3a3a5a;text-align:center;padding:10px}
+.map-caption{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#4a4a6a;margin-bottom:.5rem;font-family:monospace}
+.map-caption .live{color:#34d399}
+.map-caption .stale{color:#fbbf24}
+.legend{display:flex;gap:12px;font-size:10px;color:#6b6b95}
+.legend-item{display:flex;align-items:center;gap:4px}
+.legend-line{width:14px;height:2px;display:inline-block}
+.legend-online{background:#a78bfa}
+.legend-offline{background:#f87171;background-image:linear-gradient(90deg,#f87171 0,#f87171 4px,transparent 4px,transparent 8px);background-size:8px 2px}
+
+/* Leaflet dark tweaks */
+.leaflet-tile-pane{filter:invert(0.92) hue-rotate(180deg) saturate(0.9) brightness(0.9)}
+.leaflet-control-attribution{background:rgba(13,13,20,.7);color:#4a4a6a;font-size:9px}
+.leaflet-control-attribution a{color:#a78bfa}
 </style>
 </head>
 <body class="is-offline">
 
-<div class="offline-banner">Device offline — last seen <span id="lastSeenText">never</span>. Live data is shown as last-known.</div>
+<div class="offline-banner">Device offline — last seen <span id="lastSeenText">never</span>. Showing last known position. Route buffered on device will upload on reconnect.</div>
 
 <div class="topbar">
   <div class="logo">
@@ -156,28 +160,31 @@ body.is-offline .live-only button{cursor:not-allowed}
   </div>
 
   <div class="grid2">
-    <div class="card live-only">
-      <div class="card-title">Live location — Google Maps</div>
-      <div class="map-outer">
-        <div class="map-fallback">
-          <div class="map-grid">
-            <div class="mg-h" style="top:25%"></div><div class="mg-h" style="top:50%"></div><div class="mg-h" style="top:75%"></div>
-            <div class="mg-v" style="left:25%"></div><div class="mg-v" style="left:50%"></div><div class="mg-v" style="left:75%"></div>
-          </div>
-          <div class="map-pin"><div class="pin-pulse"><div class="pin-core"></div></div></div>
-          <div style="position:absolute;top:54%;left:57%;font-size:11px;color:#a78bfa;font-weight:500;white-space:nowrap" id="mapPlace">Awaiting GPS</div>
-          <div class="map-coord" id="mapCoord">—</div>
-          <div class="map-lost" id="signalLostBadge" style="display:none">Last known location</div>
+    <div class="card">
+      <div class="card-title">
+        <span class="lbl">Live location + route</span>
+        <span class="stat" id="mapCaption">— · 0 pts · <span id="routeStat">idle</span></span>
+      </div>
+      <div id="leafletMap"></div>
+      <div class="map-caption">
+        <div>
+          <span data-gt-gps-lat>—</span>°  <span data-gt-gps-lon>—</span>°
+          &nbsp; <span id="mapLastUpdate">no fix yet</span>
+        </div>
+        <div class="legend">
+          <div class="legend-item"><span class="legend-line legend-online"></span> online route</div>
+          <div class="legend-item"><span class="legend-line legend-offline"></span> offline / buffered</div>
         </div>
       </div>
-      <div class="gps-row"><span class="dot dr" id="gpsDot"></span><span id="gpsLabel">GPS — awaiting device</span></div>
       <div class="map-btns">
+        <button class="btn btn-gray" style="flex:1" onclick="fitToRoute()">Fit route</button>
+        <button class="btn btn-gray" style="flex:1" onclick="clearRoute()">Clear route</button>
         <button class="btn btn-purple" style="flex:1" onclick="openGoogleMaps()">Open in Maps</button>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-title">Access log</div>
+      <div class="card-title"><span class="lbl">Access log</span></div>
       <div class="alist" id="attemptList">
         <div class="empty-hint">No attempts logged yet.</div>
       </div>
@@ -194,19 +201,12 @@ body.is-offline .live-only button{cursor:not-allowed}
       <button class="btn btn-red live-only" id="killBtn" onclick="showKillConfirm()" disabled>Kill ignition</button>
       <button class="btn btn-purple live-only" onclick="toggleLock()" style="margin-left:6px" id="lockBtn2" disabled>Unlock vehicle</button>
     </div>
-    <div class="confirm-box" id="confirmBox">
-      <div class="confirm-text">⚠ Confirm: This will immediately cut the ignition relay and stop the vehicle.</div>
-      <div style="display:flex;gap:8px">
-        <button class="btn-kill-confirm" onclick="executeKill()">Confirm — kill ignition</button>
-        <button class="btn btn-gray" onclick="cancelKill()">Cancel</button>
-      </div>
-    </div>
   </div>
 
   <div class="card alerts-card">
-    <div class="card-title">Alerts &amp; SMS log</div>
+    <div class="card-title"><span class="lbl">Alerts &amp; SMS log</span></div>
     <div class="nlist" id="alertList">
-      <div class="nrow"><div style="padding-top:3px"><span class="dot dg"></span></div><div><div class="ntext">Dashboard deployed and online — awaiting device telemetry</div><div class="nmeta">phase 1 complete</div></div></div>
+      <div class="nrow"><div style="padding-top:3px"><span class="dot dg"></span></div><div><div class="ntext">Dashboard deployed — awaiting device telemetry</div><div class="nmeta">phase 1 complete</div></div></div>
     </div>
   </div>
 
@@ -214,14 +214,14 @@ body.is-offline .live-only button{cursor:not-allowed}
   <div class="sec-title">Fingerprint management — <span id="fpCap2">5</span> user slots</div>
   <div class="grid2">
     <div class="card">
-      <div class="card-title">Enroll fingerprint</div>
+      <div class="card-title"><span class="lbl">Enroll fingerprint</span></div>
       <input type="text" id="fpLabel" placeholder="User name (e.g. Owner, Driver 2)">
       <select id="fpId"><option value="">Select slot — 1 to 5</option></select>
       <button class="btn btn-purple" style="width:100%;padding:8px" onclick="enrollFP()">Start enrollment on sensor</button>
       <div id="fpStatus" style="font-size:10px;color:#4a4a6a;margin-top:7px;min-height:14px;font-family:monospace"></div>
     </div>
     <div class="card">
-      <div class="card-title">Enrolled slots</div>
+      <div class="card-title"><span class="lbl">Enrolled slots</span></div>
       <div class="fp-grid" id="fpSlots"></div>
     </div>
   </div>
@@ -230,14 +230,14 @@ body.is-offline .live-only button{cursor:not-allowed}
   <div class="sec-title">RFID card management — <span id="rfidCount">0</span> / <span id="rfidCap">2</span></div>
   <div class="grid2">
     <div class="card">
-      <div class="card-title">Register card</div>
+      <div class="card-title"><span class="lbl">Register card</span></div>
       <input type="text" id="rfidLabel" placeholder="Card label (e.g. Owner card, Spare key)">
       <input type="text" id="rfidUID" placeholder="Card UID (e.g. 9B:27:2C:1F)">
-      <button class="btn btn-purple" style="width:100%;padding:8px" onclick="registerRFID()" id="rfidAddBtn">Register card</button>
+      <button class="btn btn-purple" style="width:100%;padding:8px" onclick="registerRFID()">Register card</button>
       <div id="rfidStatus" style="font-size:10px;color:#4a4a6a;margin-top:7px;min-height:14px;font-family:monospace"></div>
     </div>
     <div class="card">
-      <div class="card-title">Registered cards</div>
+      <div class="card-title"><span class="lbl">Registered cards</span></div>
       <div id="rfidList">
         <div class="empty-hint">No cards registered.</div>
       </div>
@@ -248,14 +248,14 @@ body.is-offline .live-only button{cursor:not-allowed}
   <div class="sec-title">SMS alert numbers — up to <span id="phoneCap">2</span> (currently <span id="phoneCount">0</span>)</div>
   <div class="grid2">
     <div class="card">
-      <div class="card-title">Add number</div>
+      <div class="card-title"><span class="lbl">Add number</span></div>
       <input type="text" id="phoneLabel" placeholder="Label (e.g. Owner, Driver)">
       <input type="tel" id="phoneNumber" placeholder="+5921234567">
-      <button class="btn btn-purple" style="width:100%;padding:8px" onclick="addPhone()" id="phoneAddBtn">Add number</button>
+      <button class="btn btn-purple" style="width:100%;padding:8px" onclick="addPhone()">Add number</button>
       <div id="phoneStatus" style="font-size:10px;color:#4a4a6a;margin-top:7px;min-height:14px;font-family:monospace"></div>
     </div>
     <div class="card">
-      <div class="card-title">Registered numbers</div>
+      <div class="card-title"><span class="lbl">Registered numbers</span></div>
       <div id="phoneList">
         <div class="empty-hint">No numbers added.</div>
       </div>
@@ -274,13 +274,14 @@ body.is-offline .live-only button{cursor:not-allowed}
 </div>
 
 <script>
-// ---------- State ----------
-let CAP_FP=5, CAP_RFID=2, CAP_PHONE=2;
-let killed=false, locked=true;
-let lastLat=null, lastLng=null;
-let lastFingerprints=[];
+// ============ Config ============
+const POLL_MS = 3000;
+const HISTORY_POLL_MS = 15000;
+const DEFAULT_CENTER = [6.8013, -58.1551];  // Georgetown, Guyana
+const CAP_FP_DEFAULT = 5;
+let CAP_FP = CAP_FP_DEFAULT;
 
-// ---------- Clock ----------
+// ============ Clock ============
 function updateClock(){
   const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const d=new Date().toLocaleDateString([],{year:'numeric',month:'2-digit',day:'2-digit'});
@@ -291,266 +292,340 @@ setInterval(updateClock,1000);updateClock();
 
 function esc(s){return (s==null?'':String(s)).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
 
-// ---------- Live state polling ----------
-async function fetchState(){
-  try{
-    const r=await fetch('/api/state',{cache:'no-store'});
-    if(r.ok) applyState(await r.json());
-    else applyState(null);
-  }catch{ applyState(null); }
+// ============ Leaflet map ============
+const map = L.map('leafletMap', { zoomControl: true, attributionControl: true }).setView(DEFAULT_CENTER, 14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+const marker = L.marker(DEFAULT_CENTER, { opacity: 0 }).addTo(map);
+const lastKnownMarker = L.circleMarker(DEFAULT_CENTER, {
+  radius: 8, color: '#f87171', fillColor: '#f87171', fillOpacity: 0.4,
+  weight: 2, opacity: 0
+}).addTo(map);
+
+// Two polylines: one for confirmed online sections, one dashed for offline/reconnect segments
+const routeOnline = L.polyline([], { color: '#a78bfa', weight: 3, opacity: 0.85 }).addTo(map);
+const routeOffline = L.polyline([], { color: '#f87171', weight: 3, opacity: 0.85, dashArray: '6, 6' }).addTo(map);
+
+// Local state for building routes
+let allPoints = [];              // [{lat,lng,timestamp}]
+let lastPointsHash = '';
+let lastLat = null, lastLng = null;
+let lastOnline = false;
+
+function fitToRoute(){
+  const pts = allPoints.map(p => [p.lat, p.lng]);
+  if (pts.length === 0) { alert('No route points yet.'); return; }
+  map.fitBounds(L.latLngBounds(pts), { padding: [20, 20] });
 }
+
+function clearRoute(){
+  if (!confirm('Clear the drawn route on the map? (Does not delete from the database.)')) return;
+  routeOnline.setLatLngs([]);
+  routeOffline.setLatLngs([]);
+  allPoints = [];
+  updateMapCaption();
+}
+
+function openGoogleMaps(){
+  if (lastLat == null) { alert('No location available yet.'); return; }
+  window.open('https://www.google.com/maps?q=' + lastLat + ',' + lastLng, '_blank');
+}
+
+function updateMapCaption(){
+  const cap = document.getElementById('mapCaption');
+  const stat = document.getElementById('routeStat');
+  cap.childNodes[0].nodeValue = lastLat != null ? `${lastLat.toFixed(5)}, ${lastLng.toFixed(5)} · ${allPoints.length} pts · ` : `— · 0 pts · `;
+  stat.textContent = lastOnline ? 'tracking' : 'offline';
+  stat.className = lastOnline ? 'live' : 'stale';
+}
+
+// ============ State polling ============
+async function fetchState(){
+  try {
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    if (r.ok) applyState(await r.json());
+    else applyState(null);
+  } catch { applyState(null); }
+}
+
+function setText(sel, val){ const el = document.querySelector(sel); if (el) el.textContent = val == null ? '—' : String(val); }
 
 function applyState(s){
   const online = s && s.online === true;
+  lastOnline = online;
   document.body.classList.toggle('is-offline', !online);
 
-  // Connection pill + last seen
-  const pill=document.getElementById('connPill');
-  pill.className='pill '+(online?'pill-online':'pill-offline');
-  document.getElementById('connText').textContent=online?'Online':'Offline';
-  const ls=s ? s.seconds_since_seen : null;
+  const pill = document.getElementById('connPill');
+  pill.className = 'pill ' + (online ? 'pill-online' : 'pill-offline');
+  document.getElementById('connText').textContent = online ? 'Online' : 'Offline';
+
+  const ls = s ? s.seconds_since_seen : null;
   document.getElementById('lastSeenText').textContent =
-    ls==null ? 'never' :
-    ls<60 ? ls+'s ago' :
-    Math.floor(ls/60)+' min '+(ls%60)+'s ago';
+    ls == null ? 'never' :
+    ls < 60 ? ls + 's ago' :
+    Math.floor(ls/60) + ' min ' + (ls%60) + 's ago';
 
-  // Status bar dots
   document.getElementById('esp32Status').innerHTML =
-    '<span class="dot '+(online?'dgr':'dr')+'"></span>ESP32 '+(online?'connected':'offline');
+    '<span class="dot ' + (online?'dgr':'dr') + '"></span>ESP32 ' + (online ? 'connected' : 'offline');
   document.getElementById('simStatus').innerHTML =
-    '<span class="dot '+(online?'dgr':'dr')+'"></span>SIM7600G-H '+(online?'online':'offline');
+    '<span class="dot ' + (online?'dgr':'dr') + '"></span>SIM7600G-H ' + (online ? 'online' : 'offline');
 
-  if(!s){ return; }
+  if (!s) return;
 
-  // Capacities
-  CAP_FP    = s.capacities.fingerprints;
-  CAP_RFID  = s.capacities.rfid;
-  CAP_PHONE = s.capacities.phones;
-  document.getElementById('fpCap').textContent   = CAP_FP;
-  document.getElementById('fpCap2').textContent  = CAP_FP;
-  document.getElementById('rfidCap').textContent = CAP_RFID;
-  document.getElementById('phoneCap').textContent= CAP_PHONE;
-
-  // Counts
+  CAP_FP = s.capacities.fingerprints;
+  document.getElementById('fpCap').textContent    = CAP_FP;
+  document.getElementById('fpCap2').textContent   = CAP_FP;
+  document.getElementById('rfidCap').textContent  = s.capacities.rfid;
+  document.getElementById('phoneCap').textContent = s.capacities.phones;
   document.getElementById('fpCount').textContent    = s.counts.fingerprints;
   document.getElementById('rfidCount').textContent  = s.counts.rfid;
   document.getElementById('phoneCount').textContent = s.counts.phones;
 
-  // Failed attempts
   document.getElementById('failCount').textContent = s.failed_count;
-  document.getElementById('failSub').textContent =
-    s.failed_count===0 ? 'No failed attempts yet' :
-    s.failed_count+' since last grant';
+  document.getElementById('failSub').textContent = s.failed_count === 0 ? 'No failed attempts yet' : s.failed_count + ' since last grant';
 
-  // Immobilizer state
   const armed = s.immobilizer.kill_active;
-  killed = armed;
-  document.getElementById('immobPill').className = 'pill '+(armed?'pill-kill':'pill-ok');
+  document.getElementById('immobPill').className = 'pill ' + (armed ? 'pill-kill' : 'pill-ok');
   document.getElementById('immobText').textContent = armed ? 'Ignition killed' : 'Immobilized';
   const killBtn = document.getElementById('killBtn');
   killBtn.textContent = armed ? 'Re-enable ignition' : 'Kill ignition';
   killBtn.onclick     = armed ? reEnable : showKillConfirm;
 
-  // GPS panel
-  const d=s.device||{};
-  if(d.gps_valid && d.lat!=null && d.lng!=null){
-    lastLat=d.lat; lastLng=d.lng;
-    document.getElementById('mapCoord').textContent =
-      d.lat.toFixed(5)+'° '+(d.lat>=0?'N':'S')+'  '+Math.abs(d.lng).toFixed(5)+'° '+(d.lng>=0?'E':'W');
-    document.getElementById('gpsVal').textContent='Strong';
-    document.getElementById('gpsVal').className='mc-val ok';
-    document.getElementById('gpsSub').textContent='Live tracking';
-    document.getElementById('gpsDot').className='dot dgr';
-    document.getElementById('gpsLabel').textContent='GPS active — updating live';
-  } else if(online){
-    document.getElementById('gpsVal').textContent='Searching';
-    document.getElementById('gpsVal').className='mc-val warn';
-    document.getElementById('gpsSub').textContent='No fix yet';
-    document.getElementById('gpsDot').className='dot da';
-    document.getElementById('gpsLabel').textContent='GPS — searching for satellites';
+  // GPS: prefer the device's most recent lat/lng from state.device,
+  // fall back to immobilizer.last_known_* if we've never had a fix.
+  const d = s.device || {};
+  const im = s.immobilizer || {};
+  let lat = null, lng = null;
+  if (d.gps_valid && d.lat != null && d.lng != null) {
+    lat = d.lat; lng = d.lng;
+  } else if (im.last_known_lat && im.last_known_lng) {
+    lat = im.last_known_lat; lng = im.last_known_lng;
+  }
+  if (lat != null && lng != null) {
+    lastLat = lat; lastLng = lng;
+    document.querySelector('[data-gt-gps-lat]').textContent = lat.toFixed(5);
+    document.querySelector('[data-gt-gps-lon]').textContent = lng.toFixed(5);
+    document.getElementById('mapLastUpdate').textContent = online ? 'live · updated just now' : 'last known';
+
+    if (online) {
+      marker.setLatLng([lat, lng]).setOpacity(1);
+      lastKnownMarker.setStyle({ opacity: 0, fillOpacity: 0 });
+    } else {
+      marker.setOpacity(0);
+      lastKnownMarker.setLatLng([lat, lng]).setStyle({ opacity: 1, fillOpacity: 0.4 });
+    }
+    if (online && document.querySelector('[data-first-fit]') == null) {
+      map.setView([lat, lng], 15);
+      document.body.setAttribute('data-first-fit', '1');
+    }
   } else {
-    document.getElementById('gpsVal').textContent='—';
-    document.getElementById('gpsVal').className='mc-val';
-    document.getElementById('gpsSub').textContent='awaiting device';
+    document.querySelector('[data-gt-gps-lat]').textContent = '—';
+    document.querySelector('[data-gt-gps-lon]').textContent = '—';
   }
 
-  // GSM signal
-  if(d.rssi_dbm!=null){
-    document.getElementById('gsmVal').textContent = d.rssi_dbm+' dBm';
-    document.getElementById('gsmSub').textContent = (d.network||'LTE')+' connected';
-  } else if(!online){
-    document.getElementById('gsmVal').textContent = '—';
-    document.getElementById('gsmSub').textContent = 'awaiting device';
-  }
+  // Device metric cards
+  document.getElementById('gpsVal').textContent = d.gps_valid ? 'Strong' : (online ? 'Searching' : '—');
+  document.getElementById('gpsVal').className = d.gps_valid ? 'mc-val ok' : (online ? 'mc-val warn' : 'mc-val');
+  document.getElementById('gpsSub').textContent = d.gps_valid ? 'Live tracking' : (online ? 'No fix yet' : 'awaiting device');
 
-  // Enable / disable live-only buttons by online state
+  document.getElementById('gsmVal').textContent = d.rssi_dbm != null ? d.rssi_dbm + ' dBm' : (online ? '—' : '—');
+  document.getElementById('gsmSub').textContent = d.network || (online ? 'connected' : 'awaiting device');
+
   document.getElementById('killBtn').disabled = !online;
   document.getElementById('lockBtn').disabled = !online;
   document.getElementById('lockBtn2').disabled = !online;
+
+  updateMapCaption();
 }
 
-// ---------- Lists (RFID, fingerprints, phones, attempts) ----------
+// ============ GPS history polling ============
+async function fetchGpsHistory(){
+  try {
+    const r = await fetch('/api/gps/history?limit=500', { cache: 'no-store' });
+    if (!r.ok) return;
+    const d = await r.json();
+    const pts = d.points || [];
+    // Skip work if nothing changed
+    const hash = pts.length + ':' + (pts[pts.length-1] ? pts[pts.length-1].timestamp : '');
+    if (hash === lastPointsHash) return;
+    lastPointsHash = hash;
+    allPoints = pts;
+
+    // Split into online segments (contiguous close-in-time) and offline (large gaps).
+    // If two adjacent points differ by more than 5 min in timestamp, treat the
+    // segment between them as an offline reconnect.
+    const online = [], offline = [];
+    let currentOnline = [];
+    for (let i = 0; i < pts.length; i++) {
+      currentOnline.push([pts[i].lat, pts[i].lng]);
+      if (i + 1 < pts.length) {
+        const t0 = Date.parse(pts[i].timestamp);
+        const t1 = Date.parse(pts[i+1].timestamp);
+        if (!isNaN(t0) && !isNaN(t1) && (t1 - t0) > 5 * 60 * 1000) {
+          // gap larger than 5 min → close current online segment, start offline dashed segment
+          if (currentOnline.length >= 2) online.push(currentOnline);
+          offline.push([[pts[i].lat, pts[i].lng], [pts[i+1].lat, pts[i+1].lng]]);
+          currentOnline = [];
+        }
+      }
+    }
+    if (currentOnline.length >= 2) online.push(currentOnline);
+
+    routeOnline.setLatLngs(online);
+    routeOffline.setLatLngs(offline);
+    updateMapCaption();
+  } catch {}
+}
+
+// ============ Lists (RFID, fingerprints, phones, attempts) ============
 async function loadLists(){
   await Promise.all([loadFingerprints(), loadRfid(), loadPhones(), loadAttempts()]);
 }
 
 async function loadFingerprints(){
-  try{
-    const r=await fetch('/api/fingerprint');
-    const fps=await r.json();
-    lastFingerprints=fps;
+  try {
+    const r = await fetch('/api/fingerprint');
+    const fps = await r.json();
     renderFPSlots(fps);
-  }catch{}
+  } catch {}
 }
 
 function renderFPSlots(fps){
-  const grid=document.getElementById('fpSlots'); grid.innerHTML='';
-  const sel=document.getElementById('fpId'); sel.innerHTML='<option value="">Select slot — 1 to '+CAP_FP+'</option>';
-  const byFp={}; fps.forEach(f=>{ byFp[f.fp_id]=f; });
-  for(let i=1;i<=CAP_FP;i++){
-    const f=byFp[i];
-    const div=document.createElement('div');
-    div.className='fp-slot'+(f?' filled':'');
-    div.innerHTML='<div class="fp-num">#'+String(i).padStart(2,'0')+'</div><div class="fp-icon">'+(f?'◉':'○')+'</div><div class="fp-name">'+esc(f?(f.label||'(no label)'):'empty')+'</div>';
-    if(f){
-      div.onclick=async()=>{
-        if(!confirm('Remove '+f.label+' (slot '+i+')?')) return;
-        await fetch('/api/fingerprint/'+f.id,{method:'DELETE'});
+  const grid = document.getElementById('fpSlots'); grid.innerHTML = '';
+  const sel  = document.getElementById('fpId');    sel.innerHTML = '<option value="">Select slot — 1 to ' + CAP_FP + '</option>';
+  const byFp = {}; fps.forEach(f => byFp[f.fp_id] = f);
+  for (let i = 1; i <= CAP_FP; i++) {
+    const f = byFp[i];
+    const div = document.createElement('div');
+    div.className = 'fp-slot' + (f ? ' filled' : '');
+    div.innerHTML = '<div class="fp-num">#' + String(i).padStart(2,'0') + '</div><div class="fp-icon">' + (f ? '◉' : '○') + '</div><div class="fp-name">' + esc(f ? (f.label || '(no label)') : 'empty') + '</div>';
+    if (f) {
+      div.onclick = async () => {
+        if (!confirm('Remove ' + f.label + ' (slot ' + i + ')?')) return;
+        await fetch('/api/fingerprint/' + f.id, { method: 'DELETE' });
         loadFingerprints(); fetchState();
       };
     } else {
-      const o=document.createElement('option'); o.value=i; o.textContent='Slot '+i; sel.appendChild(o);
+      const o = document.createElement('option'); o.value = i; o.textContent = 'Slot ' + i; sel.appendChild(o);
     }
     grid.appendChild(div);
   }
 }
 
 async function enrollFP(){
-  const label=document.getElementById('fpLabel').value.trim();
-  const fp_id=parseInt(document.getElementById('fpId').value);
-  const status=document.getElementById('fpStatus');
-  if(!label){ status.style.color='#f87171'; status.textContent='ERROR: Enter a name first.'; return; }
-  if(!fp_id){ status.style.color='#f87171'; status.textContent='ERROR: Select a slot.'; return; }
-  status.style.color='#fbbf24'; status.textContent='Reserving slot '+fp_id+' on backend...';
-  const r=await fetch('/api/fingerprint/enroll',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label,fp_id})});
-  const j=await r.json();
-  if(!r.ok){ status.style.color='#f87171'; status.textContent='ERROR: '+(j.error||'failed'); return; }
-  status.style.color='#a78bfa'; status.textContent='Slot '+fp_id+' reserved. Device will prompt on AS608 sensor.';
-  document.getElementById('fpLabel').value=''; document.getElementById('fpId').value='';
+  const label = document.getElementById('fpLabel').value.trim();
+  const fp_id = parseInt(document.getElementById('fpId').value);
+  const status = document.getElementById('fpStatus');
+  if (!label) { status.style.color = '#f87171'; status.textContent = 'ERROR: Enter a name first.'; return; }
+  if (!fp_id) { status.style.color = '#f87171'; status.textContent = 'ERROR: Select a slot.'; return; }
+  status.style.color = '#fbbf24'; status.textContent = 'Reserving slot ' + fp_id + '...';
+  const r = await fetch('/api/fingerprint/enroll', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({label, fp_id}) });
+  const j = await r.json();
+  if (!r.ok) { status.style.color = '#f87171'; status.textContent = 'ERROR: ' + (j.error || 'failed'); return; }
+  status.style.color = '#a78bfa'; status.textContent = 'Slot ' + fp_id + ' reserved. Device will prompt on sensor.';
+  document.getElementById('fpLabel').value = ''; document.getElementById('fpId').value = '';
   loadFingerprints(); fetchState();
 }
 
 async function loadRfid(){
-  try{
-    const r=await fetch('/api/rfid');
-    const cards=await r.json();
-    const list=document.getElementById('rfidList');
-    if(!cards.length){ list.innerHTML='<div class="empty-hint">No cards registered.</div>'; return; }
-    list.innerHTML='';
-    cards.forEach(c=>{
-      const row=document.createElement('div'); row.className='arow';
-      row.innerHTML='<div class="aicon ir">R</div><div class="ainfo"><div class="at">'+esc(c.label)+'</div><div class="atime">'+esc(c.uid)+'</div></div><button class="btn btn-gray" style="font-size:10px;padding:2px 8px">Remove</button>';
-      row.querySelector('button').onclick=async()=>{
-        await fetch('/api/rfid/'+c.id,{method:'DELETE'});
-        loadRfid(); fetchState();
-      };
+  try {
+    const r = await fetch('/api/rfid'); const cards = await r.json();
+    const list = document.getElementById('rfidList');
+    if (!cards.length) { list.innerHTML = '<div class="empty-hint">No cards registered.</div>'; return; }
+    list.innerHTML = '';
+    cards.forEach(c => {
+      const row = document.createElement('div'); row.className = 'arow';
+      row.innerHTML = '<div class="aicon ir">R</div><div class="ainfo"><div class="at">' + esc(c.label) + '</div><div class="atime">' + esc(c.uid) + '</div></div><button class="btn btn-gray" style="font-size:10px;padding:2px 8px">Remove</button>';
+      row.querySelector('button').onclick = async () => { await fetch('/api/rfid/' + c.id, { method: 'DELETE' }); loadRfid(); fetchState(); };
       list.appendChild(row);
     });
-  }catch{}
+  } catch {}
 }
 
 async function registerRFID(){
-  const label=document.getElementById('rfidLabel').value.trim();
-  const uid=document.getElementById('rfidUID').value.trim();
-  const status=document.getElementById('rfidStatus');
-  if(!label||!uid){ status.style.color='#f87171'; status.textContent='ERROR: Enter label and UID.'; return; }
-  const r=await fetch('/api/rfid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label,uid})});
-  const j=await r.json();
-  if(!r.ok){ status.style.color='#f87171'; status.textContent='ERROR: '+(j.error||'failed'); return; }
-  status.style.color='#a78bfa'; status.textContent='OK — '+label+' registered';
-  document.getElementById('rfidLabel').value=''; document.getElementById('rfidUID').value='';
+  const label = document.getElementById('rfidLabel').value.trim();
+  const uid   = document.getElementById('rfidUID').value.trim();
+  const status = document.getElementById('rfidStatus');
+  if (!label || !uid) { status.style.color = '#f87171'; status.textContent = 'ERROR: Enter label and UID.'; return; }
+  const r = await fetch('/api/rfid', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({label, uid}) });
+  const j = await r.json();
+  if (!r.ok) { status.style.color = '#f87171'; status.textContent = 'ERROR: ' + (j.error || 'failed'); return; }
+  status.style.color = '#a78bfa'; status.textContent = 'OK — ' + label + ' registered';
+  document.getElementById('rfidLabel').value = ''; document.getElementById('rfidUID').value = '';
   loadRfid(); fetchState();
 }
 
 async function loadPhones(){
-  try{
-    const r=await fetch('/api/phones');
-    const phones=await r.json();
-    const list=document.getElementById('phoneList');
-    if(!phones.length){ list.innerHTML='<div class="empty-hint">No numbers added.</div>'; return; }
-    list.innerHTML='';
-    phones.forEach(p=>{
-      const row=document.createElement('div'); row.className='phone-row';
-      row.innerHTML='<div><div class="ph-label">'+esc(p.label)+'</div><div class="ph-num">'+esc(p.number)+'</div></div><button class="btn btn-gray" style="font-size:10px;padding:2px 8px">Remove</button>';
-      row.querySelector('button').onclick=async()=>{
-        await fetch('/api/phones/'+p.id,{method:'DELETE'});
-        loadPhones(); fetchState();
-      };
+  try {
+    const r = await fetch('/api/phones'); const phones = await r.json();
+    const list = document.getElementById('phoneList');
+    if (!phones.length) { list.innerHTML = '<div class="empty-hint">No numbers added.</div>'; return; }
+    list.innerHTML = '';
+    phones.forEach(p => {
+      const row = document.createElement('div'); row.className = 'phone-row';
+      row.innerHTML = '<div><div class="ph-label">' + esc(p.label) + '</div><div class="ph-num">' + esc(p.number) + '</div></div><button class="btn btn-gray" style="font-size:10px;padding:2px 8px">Remove</button>';
+      row.querySelector('button').onclick = async () => { await fetch('/api/phones/' + p.id, { method: 'DELETE' }); loadPhones(); fetchState(); };
       list.appendChild(row);
     });
-  }catch{}
+  } catch {}
 }
 
 async function addPhone(){
-  const label=document.getElementById('phoneLabel').value.trim();
-  const number=document.getElementById('phoneNumber').value.trim();
-  const status=document.getElementById('phoneStatus');
-  if(!label||!number){ status.style.color='#f87171'; status.textContent='ERROR: Enter label and number.'; return; }
-  const r=await fetch('/api/phones',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label,number})});
-  const j=await r.json();
-  if(!r.ok){ status.style.color='#f87171'; status.textContent='ERROR: '+(j.error||'failed'); return; }
-  status.style.color='#a78bfa'; status.textContent='OK — '+label+' added';
-  document.getElementById('phoneLabel').value=''; document.getElementById('phoneNumber').value='';
+  const label  = document.getElementById('phoneLabel').value.trim();
+  const number = document.getElementById('phoneNumber').value.trim();
+  const status = document.getElementById('phoneStatus');
+  if (!label || !number) { status.style.color = '#f87171'; status.textContent = 'ERROR: Enter label and number.'; return; }
+  const r = await fetch('/api/phones', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({label, number}) });
+  const j = await r.json();
+  if (!r.ok) { status.style.color = '#f87171'; status.textContent = 'ERROR: ' + (j.error || 'failed'); return; }
+  status.style.color = '#a78bfa'; status.textContent = 'OK — ' + label + ' added';
+  document.getElementById('phoneLabel').value = ''; document.getElementById('phoneNumber').value = '';
   loadPhones(); fetchState();
 }
 
 async function loadAttempts(){
-  try{
-    const r=await fetch('/api/attempts');
-    const att=await r.json();
-    const list=document.getElementById('attemptList');
-    if(!att.length){ list.innerHTML='<div class="empty-hint">No attempts logged yet.</div>'; return; }
-    list.innerHTML='';
-    att.slice(0,20).forEach(a=>{
-      const granted=a.result==='granted';
-      const row=document.createElement('div'); row.className='arow';
-      const iconClass = a.method==='fingerprint' ? (granted?'iff':'id') : (granted?'ir':'id');
-      const iconLetter = granted ? (a.method==='fingerprint'?'F':'R') : '!';
-      const label = (granted? a.method.toUpperCase()+' — granted' : 'Unknown '+a.method);
-      row.innerHTML='<div class="aicon '+iconClass+'">'+iconLetter+'</div><div class="ainfo"><div class="at">'+esc(label)+'</div><div class="atime">'+esc(a.timestamp||'')+'</div></div><span class="badge '+(granted?'bg':'bd')+'">'+(granted?'Granted':'Denied')+'</span>';
+  try {
+    const r = await fetch('/api/attempts'); const att = await r.json();
+    const list = document.getElementById('attemptList');
+    if (!att.length) { list.innerHTML = '<div class="empty-hint">No attempts logged yet.</div>'; return; }
+    list.innerHTML = '';
+    att.slice(0, 20).forEach(a => {
+      const granted = a.result === 'granted';
+      const row = document.createElement('div'); row.className = 'arow';
+      const iconClass = a.method === 'fingerprint' ? (granted ? 'iff' : 'id') : (granted ? 'ir' : 'id');
+      const iconLetter = granted ? (a.method === 'fingerprint' ? 'F' : 'R') : '!';
+      const label = granted ? a.method.toUpperCase() + ' — granted' : 'Unknown ' + a.method;
+      row.innerHTML = '<div class="aicon ' + iconClass + '">' + iconLetter + '</div><div class="ainfo"><div class="at">' + esc(label) + '</div><div class="atime">' + esc(a.timestamp || '') + '</div></div><span class="badge ' + (granted ? 'bg' : 'bd') + '">' + (granted ? 'Granted' : 'Denied') + '</span>';
       list.appendChild(row);
     });
-  }catch{}
+  } catch {}
 }
 
-// ---------- Kill / Lock ----------
+// ============ Kill / Lock ============
 function toggleLock(){
-  // For now, this just calls killswitch toggle. Hardware-side unlock comes when device is online.
-  fetch('/api/killswitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!killed})})
-    .then(()=>{ fetchState(); });
+  fetch('/api/killswitch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ active: false }) }).then(() => fetchState());
 }
-function showKillConfirm(){ document.getElementById('confirmBox').style.display='block'; }
-function cancelKill(){ document.getElementById('confirmBox').style.display='none'; }
-async function executeKill(){
-  document.getElementById('confirmBox').style.display='none';
-  await fetch('/api/killswitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:true})});
-  fetchState();
+function showKillConfirm(){
+  if (!confirm('Cut ignition relay now?')) return;
+  fetch('/api/killswitch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ active: true }) }).then(() => fetchState());
 }
-async function reEnable(){
-  await fetch('/api/killswitch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:false})});
-  fetchState();
+function reEnable(){
+  fetch('/api/killswitch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ active: false }) }).then(() => fetchState());
 }
 
-function openGoogleMaps(){
-  if(lastLat==null){ alert('No location available yet.'); return; }
-  window.open('https://www.google.com/maps?q='+lastLat+','+lastLng,'_blank');
-}
-
-// ---------- Boot ----------
+// ============ Boot ============
 fetchState();
 loadLists();
-setInterval(fetchState, 3000);
+fetchGpsHistory();
+setInterval(fetchState, POLL_MS);
 setInterval(loadAttempts, 10000);
+setInterval(fetchGpsHistory, HISTORY_POLL_MS);
+
+// Nudge Leaflet to recalc size after the card is laid out
+setTimeout(() => map.invalidateSize(), 300);
 </script>
 </body>
 </html>
