@@ -10,54 +10,55 @@ from database import (
 from sms import queue_sms, get_pending_sms
 from config import REGISTERED_PHONES, SECRET_KEY, ALERT_THRESHOLD, LOW_VOLT_THRESHOLD
 from datetime import datetime
+import sqlite3
 import time
 import os
-
-# ---------- Capacity limits (change here, applied everywhere) ----------
+ 
+# ---------- Capacity limits ----------
 MAX_FINGERPRINTS = 5
 MAX_RFID_CARDS   = 2
 MAX_PHONES       = 2
-
+ 
 # ---------- Device online tracking ----------
-HEARTBEAT_TIMEOUT_S = 90       # device is "offline" if no telemetry for this many seconds
+HEARTBEAT_TIMEOUT_S = 90
 device_state = {
-    "last_seen_at": None,      # epoch seconds of last /api/data POST
+    "last_seen_at": None,
     "last_voltage": None,
     "last_lat": None,
     "last_lng": None,
     "last_gps_valid": False,
     "last_rssi_dbm": None,
     "last_network": None,
+    "went_offline_at": None,   # timestamp when we last transitioned to offline
 }
-
+ 
 def is_online():
     ls = device_state["last_seen_at"]
     return ls is not None and (time.time() - ls) < HEARTBEAT_TIMEOUT_S
-
+ 
 def seconds_since_seen():
     ls = device_state["last_seen_at"]
     return None if ls is None else int(time.time() - ls)
-
-# ---------- Flask app ----------
+ 
+# ---------- Flask ----------
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SECRET_KEY
 socketio = SocketIO(app, cors_allowed_origins="*")
-
+ 
 init_db()
-
+ 
 pending_enrollment = {"active": False, "label": "", "fp_id": None}
 failed_count = [0]
-
+ 
 def seed_phones():
     existing = get_registered_phones()
     if not existing:
-        # Only seed up to MAX_PHONES to avoid creating more than allowed
         for i, number in enumerate(REGISTERED_PHONES[:MAX_PHONES]):
             if number:
                 add_phone(f"User {i+1}", number)
-
+ 
 seed_phones()
-
+ 
 # ---------- Device-facing API ----------
 @app.route("/api/data", methods=["POST"])
 def receive_data():
@@ -72,21 +73,27 @@ def receive_data():
     rssi_dbm  = data.get("rssi_dbm")
     network   = data.get("network")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Heartbeat / live-state tracking
+ 
+    # If we were offline, mark the transition timestamp so the dashboard
+    # knows when to *start* drawing the "offline route" segment.
+    was_offline = not is_online()
     device_state["last_seen_at"]   = time.time()
     device_state["last_voltage"]   = voltage
-    device_state["last_lat"]       = lat
-    device_state["last_lng"]       = lng
+    if gps_valid:
+        device_state["last_lat"]       = lat
+        device_state["last_lng"]       = lng
     device_state["last_gps_valid"] = bool(gps_valid)
     if rssi_dbm is not None:
         device_state["last_rssi_dbm"] = rssi_dbm
     if network is not None:
         device_state["last_network"] = network
-
+    if was_offline:
+        # remember the transition; dashboard uses this to highlight offline route
+        socketio.emit("reconnect", {"at": timestamp})
+ 
     log_voltage(voltage, timestamp)
     log_gps(lat, lng, gps_valid, timestamp)
-
+ 
     if attempt:
         log_attempt(method, attempt, lat, lng, timestamp)
         if attempt == "denied":
@@ -101,10 +108,10 @@ def receive_data():
             )
         elif attempt == "granted":
             failed_count[0] = 0
-
+ 
     if voltage and voltage < LOW_VOLT_THRESHOLD:
         queue_sms(f"GUARDTRACK ALERT\nBattery low: {voltage}V\nGPS: {lat:.5f},{lng:.5f}")
-
+ 
     socketio.emit("update", {
         "lat": lat, "lng": lng, "voltage": voltage,
         "status": status, "attempt": attempt,
@@ -113,13 +120,35 @@ def receive_data():
         "online": True,
     })
     return jsonify({"ok": True})
-
+ 
+# --- Batch GPS upload for offline-buffered points ---
+@app.route("/api/gps/batch", methods=["POST"])
+def gps_batch():
+    """Device drops a buffer of GPS points here when it reconnects.
+    Body: {"points": [{"lat":..., "lng":..., "utc":"YYYY-MM-DD HH:MM:SS", "gps_valid":true}, ...]}
+    """
+    data = request.json or {}
+    points = data.get("points", [])
+    saved = 0
+    for p in points:
+        try:
+            lat = float(p.get("lat", 0))
+            lng = float(p.get("lng", 0))
+            gv  = bool(p.get("gps_valid", False))
+            ts  = p.get("utc") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            log_gps(lat, lng, gv, ts)
+            saved += 1
+        except (ValueError, TypeError):
+            continue
+    socketio.emit("gps_batch_uploaded", {"count": saved})
+    return jsonify({"ok": True, "saved": saved})
+ 
 @app.route("/api/killswitch", methods=["GET"])
 def kill_poll():
     state = get_system_state()
     sms_queue = get_pending_sms()
     return jsonify({"kill": state["kill_active"], "sms_queue": sms_queue, "enrollment": pending_enrollment})
-
+ 
 @app.route("/api/killswitch", methods=["POST"])
 def set_kill():
     data = request.json or {}
@@ -128,12 +157,12 @@ def set_kill():
     queue_sms(f"GUARDTRACK\nRemote kill {'ACTIVATED' if active else 'DEACTIVATED'} from dashboard.")
     socketio.emit("kill_update", {"kill": active})
     return jsonify({"ok": True, "kill": active})
-
+ 
 # ---------- RFID ----------
 @app.route("/api/rfid", methods=["GET"])
 def get_cards():
     return jsonify(get_rfid_cards())
-
+ 
 @app.route("/api/rfid", methods=["POST"])
 def register_card():
     data = request.json or {}
@@ -148,18 +177,18 @@ def register_card():
         socketio.emit("rfid_update", {"action": "added", "label": label, "uid": uid})
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "UID already registered"}), 409
-
+ 
 @app.route("/api/rfid/<int:card_id>", methods=["DELETE"])
 def remove_card(card_id):
     delete_rfid_card(card_id)
     socketio.emit("rfid_update", {"action": "removed", "id": card_id})
     return jsonify({"ok": True})
-
+ 
 # ---------- Fingerprint ----------
 @app.route("/api/fingerprint", methods=["GET"])
 def get_fps():
     return jsonify(get_fingerprints())
-
+ 
 @app.route("/api/fingerprint/enroll", methods=["POST"])
 def start_enrollment():
     data = request.json or {}
@@ -179,7 +208,7 @@ def start_enrollment():
     pending_enrollment["label"] = label
     pending_enrollment["fp_id"] = fp_id
     return jsonify({"ok": True, "message": f"Enrollment started for {label} as ID #{fp_id}"})
-
+ 
 @app.route("/api/fingerprint/enrolled", methods=["POST"])
 def confirm_enrollment():
     data = request.json or {}
@@ -191,18 +220,18 @@ def confirm_enrollment():
     pending_enrollment["fp_id"] = None
     socketio.emit("fp_update", {"action": "added", "label": label, "fp_id": fp_id})
     return jsonify({"ok": True})
-
+ 
 @app.route("/api/fingerprint/<int:fp_id>", methods=["DELETE"])
 def remove_fp(fp_id):
     delete_fingerprint(fp_id)
     socketio.emit("fp_update", {"action": "removed", "id": fp_id})
     return jsonify({"ok": True})
-
+ 
 # ---------- Phones ----------
 @app.route("/api/phones", methods=["GET"])
 def get_phones():
     return jsonify(get_registered_phones())
-
+ 
 @app.route("/api/phones", methods=["POST"])
 def register_phone():
     data = request.json or {}
@@ -218,28 +247,59 @@ def register_phone():
         socketio.emit("phone_update", {"action": "added", "label": label, "number": number})
         return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Number already registered"}), 409
-
+ 
 @app.route("/api/phones/<int:phone_id>", methods=["DELETE"])
 def remove_phone(phone_id):
     delete_phone(phone_id)
     socketio.emit("phone_update", {"action": "removed", "id": phone_id})
     return jsonify({"ok": True})
-
-# ---------- Telemetry history ----------
+ 
+# ---------- Attempts / voltage ----------
 @app.route("/api/attempts", methods=["GET"])
 def get_attempts_route():
     return jsonify(get_attempts())
-
+ 
 @app.route("/api/voltage", methods=["GET"])
 def get_voltage_route():
     return jsonify(get_voltage_history())
-
-# ---------- Dashboard state (one-shot snapshot) ----------
+ 
+# ---------- GPS history ----------
+def query_gps_since(seconds_back=6*3600, limit=500):
+    """Return GPS points logged in the last N seconds, oldest first."""
+    conn = sqlite3.connect("guardtrack.db")
+    c = conn.cursor()
+    c.execute("""
+        SELECT lat, lng, gps_valid, timestamp
+        FROM gps_log
+        WHERE gps_valid = 1
+        ORDER BY id DESC
+        LIMIT ?
+    """, (limit,))
+    rows = c.fetchall()
+    conn.close()
+    # reverse for oldest-first (route order)
+    return [
+        {"lat": r[0], "lng": r[1], "gps_valid": bool(r[2]), "timestamp": r[3]}
+        for r in reversed(rows)
+    ]
+ 
+@app.route("/api/gps/history", methods=["GET"])
+def get_gps_history():
+    limit = int(request.args.get("limit", 500))
+    points = query_gps_since(limit=limit)
+    return jsonify({
+        "count":  len(points),
+        "points": points,
+        "last":   points[-1] if points else None,
+    })
+ 
+# ---------- Dashboard state ----------
 @app.route("/api/state", methods=["GET"])
 def get_state():
     sys = get_system_state()
+    online = is_online()
     return jsonify({
-        "online":             is_online(),
+        "online":             online,
         "seconds_since_seen": seconds_since_seen(),
         "last_seen_at":       device_state["last_seen_at"],
         "device": {
@@ -269,11 +329,12 @@ def get_state():
         },
         "pending_enrollment": pending_enrollment,
     })
-
+ 
 @app.route("/")
 def index():
     return render_template("index.html")
-
+ 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
+ 
