@@ -132,6 +132,7 @@ body.is-offline .live-only button{cursor:not-allowed}
   <div class="topbar-right">
     <span class="clock" id="clock">--:--:--</span>
     <button class="btn btn-purple live-only" id="lockBtn" onclick="toggleLock()" disabled>Unlock vehicle</button>
+       <a href="/logout" style="font-size:11px;color:#7c7c95;text-decoration:none;margin-left:10px">Log out</a>
   </div>
 </div>
 
@@ -321,13 +322,24 @@ function fitToRoute(){
   map.fitBounds(L.latLngBounds(pts), { padding: [20, 20] });
 }
 
-function clearRoute(){
-  if (!confirm('Clear the drawn route on the map? (Does not delete from the database.)')) return;
-  routeOnline.setLatLngs([]);
-  routeOffline.setLatLngs([]);
-  allPoints = [];
-  updateMapCaption();
-}
+   async function clearRoute(){
+     if (!confirm('Clear the entire route history from the database? This cannot be undone.')) return;
+     try {
+       const r = await fetch('/api/gps/history', { method: 'DELETE' });
+       if (r.ok) {
+         routeOnline.setLatLngs([]);
+         routeOffline.setLatLngs([]);
+         allPoints = [];
+         lastPointsHash = '';
+         updateMapCaption();
+         alert('Route history cleared.');
+       } else {
+         alert('Failed to clear route history (server returned ' + r.status + ')');
+       }
+     } catch(e) {
+       alert('Error: ' + e.message);
+     }
+   }
 
 function openGoogleMaps(){
   if (lastLat == null) { alert('No location available yet.'); return; }
